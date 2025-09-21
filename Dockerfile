@@ -48,13 +48,8 @@ COPY ./install-flarum.sh /usr/local/bin/install-flarum.sh
 # Set the working directory
 WORKDIR /var/www/html
 
-# Download and extract Flarum from the official release
-RUN curl -sSL -o flarum.tar.gz https://github.com/flarum/flarum/releases/download/v1.9.0/flarum-1.9.0.tar.gz && \
-    tar -xzf flarum.tar.gz -C /var/www/html/ --strip-components=1 && \
-    rm flarum.tar.gz
-
-# Install PHP dependencies
-RUN composer install --no-dev -o --prefer-dist --no-interaction
+# Create Flarum project using Composer (instead of downloading tarball)
+RUN composer create-project flarum/flarum . --stability=beta --no-interaction
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html && \
