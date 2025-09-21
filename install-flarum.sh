@@ -3,9 +3,27 @@ set -e
 
 cd /var/www/html
 
+# Wait for database to be ready (important for cloud databases)
+echo "Waiting for database to be ready..."
+sleep 10
+
 # Check if Flarum is already installed (if config.php exists)
 if [ ! -f config.php ]; then
     echo "Flarum not found. Starting automatic installation..."
+
+    # Test database connection first
+    echo "Testing PostgreSQL database connection..."
+    PGPASSWORD="${DATABASE_PASSWORD}" psql -h "${DATABASE_HOST}" -U "${DATABASE_USER}" -d "${DATABASE_NAME}" -c "SELECT 1;" > /dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        echo "Database connection successful!"
+    else
+        echo "ERROR: Cannot connect to PostgreSQL database!"
+        echo "Host: ${DATABASE_HOST}"
+        echo "User: ${DATABASE_USER}"
+        echo "Database: ${DATABASE_NAME}"
+        exit 1
+    fi
 
     # Create a temporary config file with the database credentials
     cat > /tmp/flarum-config.json << EOF
@@ -30,6 +48,7 @@ if [ ! -f config.php ]; then
 EOF
 
     # Run the Flarum install command using the config file
+    echo "Installing Flarum..."
     php flarum install --file /tmp/flarum-config.json
 
     # Clean up the temporary config file
