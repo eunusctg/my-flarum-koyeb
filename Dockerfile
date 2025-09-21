@@ -1,7 +1,7 @@
 # Use the latest stable PHP-Apache image
 FROM php:apache
 
-# Install system dependencies and all necessary PHP extensions
+# Install system dependencies
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y \
@@ -22,56 +22,45 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Configure and install PHP extensions (Fixed extension names)
+# Configure and install only essential PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg && \
-    docker-php-ext-install -j$(nproc) \
+    docker-php-ext-install \
         bcmath \
-        ctype \
-        curl \
-        dom \
-        fileinfo \
         gd \
-        iconv \
-        intl \
         mbstring \
         opcache \
         pdo \
         pdo_mysql \
         pdo_pgsql \
         pdo_sqlite \
-        session \
-        simplexml \
-        tokenizer \
-        xml \
-        xmlwriter \
         zip
 
-# Enable Apache's rewrite module for Flarum's clean URLs
+# Enable Apache's rewrite module
 RUN a2enmod rewrite
 
 # Install latest Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Copy our custom Apache configuration and installation script
+# Copy configuration files
 COPY ./apache-flarum.conf /etc/apache2/sites-available/000-default.conf
 COPY ./install-flarum.sh /usr/local/bin/install-flarum.sh
 
-# Set the working directory to the web root
+# Set the working directory
 WORKDIR /var/www/html
 
-# Download and extract the latest Flarum release
+# Download and extract Flarum
 RUN curl -o flarum.tar.gz -SL "https://flarum.org/releases/flarum-latest.tar.gz" && \
     tar -xzf flarum.tar.gz -C /var/www/html/ --strip-components=1 && \
     rm flarum.tar.gz
 
-# Install PHP dependencies via Composer
+# Install PHP dependencies
 RUN composer install --no-dev -o --prefer-dist --no-interaction
 
-# Set correct permissions for the web server and make our script executable
+# Set permissions
 RUN chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html/storage && \
     chmod +x /usr/local/bin/install-flarum.sh
 
-# Set the entrypoint to run our installation script and then start Apache
+# Set entrypoint
 ENTRYPOINT ["/usr/local/bin/install-flarum.sh"]
 CMD ["apache2-foreground"]
