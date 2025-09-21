@@ -25,6 +25,17 @@ if [ ! -f config.php ]; then
         exit 1
     fi
 
+    # Check if database is empty
+    echo "Checking if database is empty..."
+    TABLE_COUNT=$(PGPASSWORD="${DATABASE_PASSWORD}" psql -h "${DATABASE_HOST}" -U "${DATABASE_USER}" -d "${DATABASE_NAME}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';")
+    
+    if [ "$TABLE_COUNT" -gt 0 ]; then
+        echo "WARNING: Database already contains $TABLE_COUNT tables!"
+        echo "This might cause migration conflicts. Consider using an empty database."
+    else
+        echo "Database is empty, good to proceed."
+    fi
+
     # Manually create the config.php file for PostgreSQL
     echo "Creating Flarum configuration..."
     cat > config.php << EOF
@@ -66,60 +77,41 @@ EOF
 
     echo "Flarum configuration created successfully!"
 
-    # Run database migrations
-    echo "Running database migrations..."
-    php flarum migrate
+    # Test if Flarum can connect to the database
+    echo "Testing Flarum database connection..."
+    php -r "
+    require 'vendor/autoload.php';
+    \$config = require 'config.php';
+    \$capsule = new Illuminate\Database\Capsule\Manager;
+    \$capsule->addConnection(\$config['database']);
+    \$capsule->setAsGlobal();
+    \$capsule->bootEloquent();
+    try {
+        \$capsule->getConnection()->getPdo();
+        echo 'Flarum database connection: SUCCESS\n';
+    } catch (Exception \$e) {
+        echo 'Flarum database connection: FAILED - ' . \$e->getMessage() . '\n';
+        exit(1);
+    }
+    "
 
-    # Create admin user
-    echo "Creating admin user..."
-    php flarum user:create --admin --username "${FLARUM_ADMIN_USER}" --password "${FLARUM_ADMIN_PASSWORD}" --email "${FLARUM_ADMIN_EMAIL}"
+    # Run database migrations with verbose output
+    echo "Running database migrations with verbose output..."
+    php flarum migrate -v
 
-    # Set forum title
-    echo "Setting forum title..."
-    php flarum settings:set forum_title "${FLARUM_TITLE}"
+    # If migrations succeed, create admin user
+    if [ $? -eq 0 ]; then
+        echo "Creating admin user..."
+        php flarum user:create --admin --username "${FLARUM_ADMIN_USER}" --password "${FLARUM_ADMIN_PASSWORD}" --email "${FLARUM_ADMIN_EMAIL}"
 
-    echo "Flarum installation completed successfully!"
+        # Set forum title
+        echo "Setting forum title..."
+        php flarum settings:set forum_title "${FLARUM_TITLE}"
 
-    # Configure R2 if environment variables are set
-    if [ -n "${R2_ACCESS_KEY_ID}" ] && [ -n "${R2_SECRET_ACCESS_KEY}" ] && [ -n "${R2_BUCKET}" ]; then
-        echo "Configuring Cloudflare R2 storage..."
-
-        # Use a PHP script to safely modify the config.php file
-        php <<EOF
-<?php
-\$config = include 'config.php';
-
-// Define the R2 filesystem disk configuration
-\$r2Config = [
-    'driver' => 's3',
-    'region' => 'auto',
-    'bucket' => '${R2_BUCKET}',
-    'url' => 'https://pub-${R2_ACCOUNT_ID}.r2.dev/${R2_BUCKET}',
-    'endpoint' => 'https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com',
-    'use_path_style_endpoint' => true,
-    'key' => '${R2_ACCESS_KEY_ID}',
-    'secret' => '${R2_SECRET_ACCESS_KEY}',
-    'visibility' => 'public',
-    'root' => 'assets'
-];
-
-// Merge the new configuration
-\$config['filesystems'] = [
-    'disks' => [
-        'flarum-uploads' => \$r2Config,
-        'flarum-assets' => \$r2Config
-    ]
-];
-
-// Write the updated configuration back to the file
-file_put_contents('config.php', '<?php return ' . var_export(\$config, true) . ';');
-echo "R2 configuration applied successfully.\n";
-?>
-EOF
-
-        echo "Cloudflare R2 configuration completed!"
+        echo "Flarum installation completed successfully!"
     else
-        echo "R2 environment variables not set. Skipping R2 configuration."
+        echo "Migrations failed. Check the error above."
+        exit 1
     fi
 
 else
