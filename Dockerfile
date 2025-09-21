@@ -18,7 +18,8 @@ RUN apt-get update && \
         libsqlite3-dev \
         libonig-dev \
         libxml2-dev \
-        libpq-dev && \
+        libpq-dev \
+        postgresql-client && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -48,7 +49,7 @@ COPY ./install-flarum.sh /usr/local/bin/install-flarum.sh
 # Set the working directory
 WORKDIR /var/www/html
 
-# Create Flarum project using Composer (instead of downloading tarball)
+# Create Flarum project using Composer
 RUN composer create-project flarum/flarum . --stability=beta --no-interaction
 
 # Set permissions
