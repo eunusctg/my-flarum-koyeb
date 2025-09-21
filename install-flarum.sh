@@ -66,33 +66,76 @@ EOF
 
     echo "Flarum configuration created successfully!"
 
-    # Run migrations using a PHP script to capture errors better
-    echo "Running database migrations via PHP script..."
+    # Test basic database operations to ensure connectivity works
+    echo "Testing basic database operations..."
     php << 'EOF'
 <?php
 require 'vendor/autoload.php';
 
-// Load configuration
 $config = require 'config.php';
 
-// Set up database connection
 $capsule = new Illuminate\Database\Capsule\Manager;
 $capsule->addConnection($config['database']);
 $capsule->setAsGlobal();
 $capsule->bootEloquent();
 
 try {
-    // Run migrations
-    $migrator = new Illuminate\Database\Migrations\Migrator(
-        new Illuminate\Database\Migrations\MigrationRepository($capsule->getConnection(), 'migrations'),
-        $capsule->getConnection(),
-        new Illuminate\Filesystem\Filesystem
-    );
+    // Test simple query
+    $result = $capsule->getConnection()->select('SELECT version() as version');
+    echo "PostgreSQL version: " . $result[0]->version . "\n";
     
-    $migrator->run('migrations');
-    echo "Migrations completed successfully!\n";
+    // Test creating a simple table
+    $capsule->getConnection()->statement('CREATE TABLE IF NOT EXISTS test_migration (id SERIAL PRIMARY KEY, name VARCHAR(255))');
+    echo "Test table created successfully!\n";
+    
+    // Test inserting data
+    $capsule->getConnection()->statement("INSERT INTO test_migration (name) VALUES ('test')");
+    echo "Test data inserted successfully!\n";
+    
+    // Test reading data
+    $results = $capsule->getConnection()->select('SELECT * FROM test_migration');
+    echo "Test data read successfully! Found " . count($results) . " rows.\n";
+    
+    // Test dropping the table
+    $capsule->getConnection()->statement('DROP TABLE IF EXISTS test_migration');
+    echo "Test table dropped successfully!\n";
+    
     exit(0);
+} catch (Exception $e) {
+    echo "Database operation failed: " . $e->getMessage() . "\n";
+    echo "File: " . $e->getFile() . ":" . $e->getLine() . "\n";
+    exit(1);
+}
+?>
+EOF
+
+    DB_TEST_EXIT_CODE=$?
     
+    if [ $DB_TEST_EXIT_CODE -eq 0 ]; then
+        echo "Database operations test successful!"
+        
+        # Now try to run Flarum migrations with error output
+        echo "Running Flarum migrations..."
+        echo "=========================================="
+        # Use a PHP script to run migrations with better error handling
+        php << 'EOF'
+<?php
+require 'vendor/autoload.php';
+
+// Load Flarum application
+$app = require 'vendor/flarum/core/src/Install/Console/Application.php';
+
+// Set up the migrate command
+$input = new Symfony\Component\Console\Input\ArrayInput([
+    'command' => 'migrate',
+    '--force' => true,
+]);
+
+$output = new Symfony\Component\Console\Output\StreamOutput(fopen('php://stdout', 'w'));
+
+try {
+    $exitCode = $app->run($input, $output);
+    exit($exitCode);
 } catch (Exception $e) {
     echo "Migration error: " . $e->getMessage() . "\n";
     echo "File: " . $e->getFile() . ":" . $e->getLine() . "\n";
@@ -101,24 +144,26 @@ try {
 ?>
 EOF
 
-    MIGRATION_EXIT_CODE=$?
-    
-    if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
-        echo "Migrations successful!"
-        
-        echo "Creating admin user..."
-        php flarum user:create --admin --username "${FLARUM_ADMIN_USER}" --password "${FLARUM_ADMIN_PASSWORD}" --email "${FLARUM_ADMIN_EMAIL}"
+        MIGRATION_EXIT_CODE=$?
+        echo "=========================================="
+        echo "Migration exit code: $MIGRATION_EXIT_CODE"
 
-        echo "Setting forum title..."
-        php flarum settings:set forum_title "${FLARUM_TITLE}"
+        if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
+            echo "Migrations successful!"
+            
+            echo "Creating admin user..."
+            php flarum user:create --admin --username "${FLARUM_ADMIN_USER}" --password "${FLARUM_ADMIN_PASSWORD}" --email "${FLARUM_ADMIN_EMAIL}"
 
-        echo "Flarum installation completed successfully!"
+            echo "Setting forum title..."
+            php flarum settings:set forum_title "${FLARUM_TITLE}"
 
-        # Configure R2 if environment variables are set
-        if [ -n "${R2_ACCESS_KEY_ID}" ] && [ -n "${R2_SECRET_ACCESS_KEY}" ] && [ -n "${R2_BUCKET}" ]; then
-            echo "Configuring Cloudflare R2 storage..."
+            echo "Flarum installation completed successfully!"
 
-            php <<EOF
+            # Configure R2 if environment variables are set
+            if [ -n "${R2_ACCESS_KEY_ID}" ] && [ -n "${R2_SECRET_ACCESS_KEY}" ] && [ -n "${R2_BUCKET}" ]; then
+                echo "Configuring Cloudflare R2 storage..."
+
+                php <<EOF
 <?php
 \$config = include 'config.php';
 
@@ -150,13 +195,18 @@ echo "R2 configuration applied successfully.\n";
 ?>
 EOF
 
-            echo "Cloudflare R2 configuration completed!"
+                echo "Cloudflare R2 configuration completed!"
+            else
+                echo "R2 environment variables not set. Skipping R2 configuration."
+            fi
+
         else
-            echo "R2 environment variables not set. Skipping R2 configuration."
+            echo "Migrations failed with exit code: $MIGRATION_EXIT_CODE"
+            exit 1
         fi
 
     else
-        echo "Migrations failed with exit code: $MIGRATION_EXIT_CODE"
+        echo "Database operations test failed with exit code: $DB_TEST_EXIT_CODE"
         exit 1
     fi
 
