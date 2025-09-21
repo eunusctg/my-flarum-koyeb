@@ -7,17 +7,33 @@ cd /var/www/html
 if [ ! -f config.php ]; then
     echo "Flarum not found. Starting automatic installation..."
 
-    # Run the Flarum install command using environment variables
-    php flarum install --file \
-        --admin-user "${FLARUM_ADMIN_USER}" \
-        --admin-password "${FLARUM_ADMIN_PASSWORD}" \
-        --admin-email "${FLARUM_ADMIN_EMAIL}" \
-        --title "${FLARUM_TITLE}" \
-        --dbhost "${DATABASE_HOST}" \
-        --dbname "${DATABASE_NAME}" \
-        --dbuser "${DATABASE_USER}" \
-        --dbpass "${DATABASE_PASSWORD}" \
-        --dbdriver "pgsql"
+    # Create a temporary config file with the database credentials
+    cat > /tmp/flarum-config.json << EOF
+{
+    "database": {
+        "driver": "pgsql",
+        "host": "${DATABASE_HOST}",
+        "port": 5432,
+        "database": "${DATABASE_NAME}",
+        "username": "${DATABASE_USER}",
+        "password": "${DATABASE_PASSWORD}",
+        "prefix": "flarum_"
+    },
+    "admin": {
+        "username": "${FLARUM_ADMIN_USER}",
+        "password": "${FLARUM_ADMIN_PASSWORD}",
+        "email": "${FLARUM_ADMIN_EMAIL}"
+    },
+    "url": "https://${KOYEB_APP_NAME:-localhost}.koyeb.app",
+    "debug": false
+}
+EOF
+
+    # Run the Flarum install command using the config file
+    php flarum install --file /tmp/flarum-config.json
+
+    # Clean up the temporary config file
+    rm /tmp/flarum-config.json
 
     echo "Flarum installation completed successfully!"
 
