@@ -22,10 +22,9 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Configure and install PHP extensions (Added pdo_pgsql for PostgreSQL)
+# Configure and install PHP extensions (Fixed extension names)
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg && \
-    docker-php-ext-configure zip && \
-    docker-php-ext-install \
+    docker-php-ext-install -j$(nproc) \
         bcmath \
         ctype \
         curl \
@@ -42,7 +41,6 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg && \
         pdo_sqlite \
         session \
         simplexml \
-        sqlite3 \
         tokenizer \
         xml \
         xmlwriter \
