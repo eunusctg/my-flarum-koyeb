@@ -66,43 +66,34 @@ EOF
 
     echo "Flarum configuration created successfully!"
 
-    # Run Flarum migrations with error output capture
+    # Run Flarum migrations with detailed error capture
     echo "Running Flarum migrations..."
     echo "=========================================="
     
-    # Try to run migrations and capture all output
-    MIGRATION_OUTPUT=$(php flarum migrate 2>&1)
+    # Run migrations and capture output to a file
+    php flarum migrate 2> /tmp/migration_error.log
     MIGRATION_EXIT_CODE=$?
     
-    echo "$MIGRATION_OUTPUT"
-    echo "=========================================="
+    # Check if error file exists and has content
+    if [ -s /tmp/migration_error.log ]; then
+        echo "Migration error output:"
+        cat /tmp/migration_error.log
+        echo "=========================================="
+    else
+        echo "No error output captured from migrations."
+        echo "=========================================="
+    fi
+    
     echo "Migration exit code: $MIGRATION_EXIT_CODE"
 
     if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
         echo "Migrations successful!"
         
         echo "Creating admin user..."
-        USER_OUTPUT=$(php flarum user:create --admin --username "${FLARUM_ADMIN_USER}" --password "${FLARUM_ADMIN_PASSWORD}" --email "${FLARUM_ADMIN_EMAIL}" 2>&1)
-        USER_EXIT_CODE=$?
+        php flarum user:create --admin --username "${FLARUM_ADMIN_USER}" --password "${FLARUM_ADMIN_PASSWORD}" --email "${FLARUM_ADMIN_EMAIL}" 2>&1 | tee /tmp/user_create.log
         
-        if [ $USER_EXIT_CODE -eq 0 ]; then
-            echo "Admin user created successfully!"
-        else
-            echo "Admin user creation failed:"
-            echo "$USER_OUTPUT"
-            # Continue anyway since we can create the user later
-        fi
-
         echo "Setting forum title..."
-        TITLE_OUTPUT=$(php flarum settings:set forum_title "${FLARUM_TITLE}" 2>&1)
-        TITLE_EXIT_CODE=$?
-        
-        if [ $TITLE_EXIT_CODE -eq 0 ]; then
-            echo "Forum title set successfully!"
-        else
-            echo "Forum title setting failed:"
-            echo "$TITLE_OUTPUT"
-        fi
+        php flarum settings:set forum_title "${FLARUM_TITLE}" 2>&1 | tee /tmp/title_set.log
 
         echo "Flarum installation completed successfully!"
 
@@ -149,8 +140,15 @@ EOF
 
     else
         echo "Migrations failed with exit code: $MIGRATION_EXIT_CODE"
-        echo "Error output:"
-        echo "$MIGRATION_OUTPUT"
+        
+        # Try to get more debug info
+        echo "Trying to get more debug information..."
+        php -r "
+        require 'vendor/autoload.php';
+        \$config = require 'config.php';
+        echo 'Database config: ' . print_r(\$config['database'], true) . '\n';
+        " 2>&1 | tee /tmp/debug_info.log
+        
         exit 1
     fi
 
