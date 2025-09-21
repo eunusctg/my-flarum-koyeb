@@ -25,17 +25,6 @@ if [ ! -f config.php ]; then
         exit 1
     fi
 
-    # Check if database is empty
-    echo "Checking if database is empty..."
-    TABLE_COUNT=$(PGPASSWORD="${DATABASE_PASSWORD}" psql -h "${DATABASE_HOST}" -U "${DATABASE_USER}" -d "${DATABASE_NAME}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';")
-    
-    if [ "$TABLE_COUNT" -gt 0 ]; then
-        echo "WARNING: Database already contains $TABLE_COUNT tables!"
-        echo "This might cause migration conflicts. Consider using an empty database."
-    else
-        echo "Database is empty, good to proceed."
-    fi
-
     # Manually create the config.php file for PostgreSQL
     echo "Creating Flarum configuration..."
     cat > config.php << EOF
@@ -77,37 +66,43 @@ EOF
 
     echo "Flarum configuration created successfully!"
 
-    # Test if Flarum can connect to the database
-    echo "Testing Flarum database connection..."
-    php -r "
-    require 'vendor/autoload.php';
-    \$config = require 'config.php';
-    \$capsule = new Illuminate\Database\Capsule\Manager;
-    \$capsule->addConnection(\$config['database']);
-    \$capsule->setAsGlobal();
-    \$capsule->bootEloquent();
-    try {
-        \$capsule->getConnection()->getPdo();
-        echo 'Flarum database connection: SUCCESS\n';
-    } catch (Exception \$e) {
-        echo 'Flarum database connection: FAILED - ' . \$e->getMessage() . '\n';
-        exit(1);
-    }
-    "
+    # Run migrations using a PHP script to capture errors better
+    echo "Running database migrations via PHP script..."
+    php << 'EOF'
+<?php
+require 'vendor/autoload.php';
 
-    # Run database migrations and capture full output
-    echo "Running database migrations..."
-    echo "=========================================="
-    php flarum migrate 2>&1 | tee /tmp/migration_output.log
-    MIGRATION_EXIT_CODE=${PIPESTATUS[0]}
-    echo "=========================================="
-    echo "Migration exit code: $MIGRATION_EXIT_CODE"
+// Load configuration
+$config = require 'config.php';
+
+// Set up database connection
+$capsule = new Illuminate\Database\Capsule\Manager;
+$capsule->addConnection($config['database']);
+$capsule->setAsGlobal();
+$capsule->bootEloquent();
+
+try {
+    // Run migrations
+    $migrator = new Illuminate\Database\Migrations\Migrator(
+        new Illuminate\Database\Migrations\MigrationRepository($capsule->getConnection(), 'migrations'),
+        $capsule->getConnection(),
+        new Illuminate\Filesystem\Filesystem
+    );
     
-    # Display migration output
-    echo "Migration output:"
-    cat /tmp/migration_output.log
-    rm /tmp/migration_output.log
+    $migrator->run('migrations');
+    echo "Migrations completed successfully!\n";
+    exit(0);
+    
+} catch (Exception $e) {
+    echo "Migration error: " . $e->getMessage() . "\n";
+    echo "File: " . $e->getFile() . ":" . $e->getLine() . "\n";
+    exit(1);
+}
+?>
+EOF
 
+    MIGRATION_EXIT_CODE=$?
+    
     if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
         echo "Migrations successful!"
         
@@ -162,7 +157,6 @@ EOF
 
     else
         echo "Migrations failed with exit code: $MIGRATION_EXIT_CODE"
-        echo "Please check the migration output above for errors."
         exit 1
     fi
 
