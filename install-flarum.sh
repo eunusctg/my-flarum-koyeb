@@ -95,22 +95,74 @@ EOF
     }
     "
 
-    # Run database migrations with verbose output
-    echo "Running database migrations with verbose output..."
-    php flarum migrate -v
+    # Run database migrations and capture full output
+    echo "Running database migrations..."
+    echo "=========================================="
+    php flarum migrate 2>&1 | tee /tmp/migration_output.log
+    MIGRATION_EXIT_CODE=${PIPESTATUS[0]}
+    echo "=========================================="
+    echo "Migration exit code: $MIGRATION_EXIT_CODE"
+    
+    # Display migration output
+    echo "Migration output:"
+    cat /tmp/migration_output.log
+    rm /tmp/migration_output.log
 
-    # If migrations succeed, create admin user
-    if [ $? -eq 0 ]; then
+    if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
+        echo "Migrations successful!"
+        
         echo "Creating admin user..."
         php flarum user:create --admin --username "${FLARUM_ADMIN_USER}" --password "${FLARUM_ADMIN_PASSWORD}" --email "${FLARUM_ADMIN_EMAIL}"
 
-        # Set forum title
         echo "Setting forum title..."
         php flarum settings:set forum_title "${FLARUM_TITLE}"
 
         echo "Flarum installation completed successfully!"
+
+        # Configure R2 if environment variables are set
+        if [ -n "${R2_ACCESS_KEY_ID}" ] && [ -n "${R2_SECRET_ACCESS_KEY}" ] && [ -n "${R2_BUCKET}" ]; then
+            echo "Configuring Cloudflare R2 storage..."
+
+            php <<EOF
+<?php
+\$config = include 'config.php';
+
+// Define the R2 filesystem disk configuration
+\$r2Config = [
+    'driver' => 's3',
+    'region' => 'auto',
+    'bucket' => '${R2_BUCKET}',
+    'url' => 'https://pub-${R2_ACCOUNT_ID}.r2.dev/${R2_BUCKET}',
+    'endpoint' => 'https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com',
+    'use_path_style_endpoint' => true,
+    'key' => '${R2_ACCESS_KEY_ID}',
+    'secret' => '${R2_SECRET_ACCESS_KEY}',
+    'visibility' => 'public',
+    'root' => 'assets'
+];
+
+// Merge the new configuration
+\$config['filesystems'] = [
+    'disks' => [
+        'flarum-uploads' => \$r2Config,
+        'flarum-assets' => \$r2Config
+    ]
+];
+
+// Write the updated configuration back to the file
+file_put_contents('config.php', '<?php return ' . var_export(\$config, true) . ';');
+echo "R2 configuration applied successfully.\n";
+?>
+EOF
+
+            echo "Cloudflare R2 configuration completed!"
+        else
+            echo "R2 environment variables not set. Skipping R2 configuration."
+        fi
+
     else
-        echo "Migrations failed. Check the error above."
+        echo "Migrations failed with exit code: $MIGRATION_EXIT_CODE"
+        echo "Please check the migration output above for errors."
         exit 1
     fi
 
