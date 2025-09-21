@@ -18,7 +18,7 @@ RUN apt-get update && \
         libsqlite3-dev \
         libonig-dev \
         libxml2-dev \
-        libpq-dev && \  # Critical: Added for PostgreSQL support
+        libpq-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -38,7 +38,7 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg && \
         opcache \
         pdo \
         pdo_mysql \
-        pdo_pgsql \  # Required for your Koyeb database
+        pdo_pgsql \
         pdo_sqlite \
         session \
         simplexml \
