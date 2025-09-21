@@ -48,11 +48,8 @@ COPY ./install-flarum.sh /usr/local/bin/install-flarum.sh
 # Set the working directory
 WORKDIR /var/www/html
 
-# Download and extract the latest Flarum release from GitHub
-RUN curl -sSL https://api.github.com/repos/flarum/flarum/releases/latest \
-    | grep "browser_download_url.*tar.gz" \
-    | cut -d '"' -f 4 \
-    | xargs curl -L -o flarum.tar.gz && \
+# Download and extract Flarum from the official release
+RUN curl -sSL -o flarum.tar.gz https://github.com/flarum/flarum/releases/download/v1.9.0/flarum-1.9.0.tar.gz && \
     tar -xzf flarum.tar.gz -C /var/www/html/ --strip-components=1 && \
     rm flarum.tar.gz
 
