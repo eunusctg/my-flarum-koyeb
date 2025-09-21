@@ -3,7 +3,7 @@ set -e
 
 cd /var/www/html
 
-# Wait for database to be ready (important for cloud databases)
+# Wait for database to be ready
 echo "Waiting for database to be ready..."
 sleep 10
 
@@ -25,34 +25,58 @@ if [ ! -f config.php ]; then
         exit 1
     fi
 
-    # Create a temporary config file with the database credentials
-    cat > /tmp/flarum-config.json << EOF
-{
-    "database": {
-        "driver": "pgsql",
-        "host": "${DATABASE_HOST}",
-        "port": 5432,
-        "database": "${DATABASE_NAME}",
-        "username": "${DATABASE_USER}",
-        "password": "${DATABASE_PASSWORD}",
-        "prefix": "flarum_"
-    },
-    "admin": {
-        "username": "${FLARUM_ADMIN_USER}",
-        "password": "${FLARUM_ADMIN_PASSWORD}",
-        "email": "${FLARUM_ADMIN_EMAIL}"
-    },
-    "url": "https://${KOYEB_APP_NAME:-localhost}.koyeb.app",
-    "debug": false
-}
+    # Manually create the config.php file for PostgreSQL
+    echo "Creating Flarum configuration..."
+    cat > config.php << EOF
+<?php return array (
+  'debug' => false,
+  'database' => 
+  array (
+    'driver' => 'pgsql',
+    'host' => '${DATABASE_HOST}',
+    'port' => 5432,
+    'database' => '${DATABASE_NAME}',
+    'username' => '${DATABASE_USER}',
+    'password' => '${DATABASE_PASSWORD}',
+    'charset' => 'utf8mb4',
+    'collation' => 'utf8mb4_unicode_ci',
+    'prefix' => 'flarum_',
+    'strict' => false,
+    'engine' => NULL,
+    'schema' => 'public',
+    'sslmode' => 'prefer',
+  ),
+  'url' => 'https://${KOYEB_APP_NAME}.koyeb.app',
+  'paths' => 
+  array (
+    'api' => 'api',
+    'admin' => 'admin',
+  ),
+  'headers' => 
+  array (
+    'poweredByHeader' => true,
+    'referrerPolicy' => 'same-origin',
+  ),
+);
 EOF
 
-    # Run the Flarum install command using the config file
-    echo "Installing Flarum..."
-    php flarum install --file /tmp/flarum-config.json
+    # Set correct permissions
+    chown www-data:www-data config.php
+    chmod 644 config.php
 
-    # Clean up the temporary config file
-    rm /tmp/flarum-config.json
+    echo "Flarum configuration created successfully!"
+
+    # Run database migrations
+    echo "Running database migrations..."
+    php flarum migrate
+
+    # Create admin user
+    echo "Creating admin user..."
+    php flarum user:create --admin --username "${FLARUM_ADMIN_USER}" --password "${FLARUM_ADMIN_PASSWORD}" --email "${FLARUM_ADMIN_EMAIL}"
+
+    # Set forum title
+    echo "Setting forum title..."
+    php flarum settings:set forum_title "${FLARUM_TITLE}"
 
     echo "Flarum installation completed successfully!"
 
